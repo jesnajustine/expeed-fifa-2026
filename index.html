@@ -856,11 +856,21 @@ function tbdAC(input, inputId, listId){
   if(!hits.length){list.style.display="none";return;}
   list.innerHTML = hits.map(t=>{
     const f = flag(t);
-    const hi = t.replace(new RegExp("("+val.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"),"<em>$1</em>");
-    return '<div class="ac-item" style="display:flex;align-items:center;gap:8px" onmousedown="tbdSelect(\''+ inputId +'\',\''+ listId +'\',\''+ t +'\')">'
-      +'<span>'+ f +'</span><span>'+ hi +'</span></div>';
+    const hi = t.replace(new RegExp("("+val.replace(/[.*+?^${}()|[\]\\]/g,"\$&")+")","gi"),"<em>$1</em>");
+    return '<div class="ac-item" style="display:flex;align-items:center;gap:8px" data-team="'+t+'" data-input="'+inputId+'" data-list="'+listId+'" onmousedown="tbdSelectItem(this)">'
+      +'<span>'+f+'</span><span>'+hi+'</span></div>';
   }).join("");
   list.style.display="block";
+}
+
+function tbdSelectItem(el){
+  const team = el.dataset.team;
+  const inputId = el.dataset.input;
+  const listId = el.dataset.list;
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if(input) input.value = team;
+  if(list){list.style.display="none";list.innerHTML="";}
 }
 
 function tbdSelect(inputId, listId, team){
