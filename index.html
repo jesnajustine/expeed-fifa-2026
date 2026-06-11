@@ -386,19 +386,22 @@ async function doEmpLogin(){
   if(!pwdVal){er.textContent="Please enter your password.";er.style.display="block";return;}
   showLoader("Verifying...");
   try{
-    const params=encodeURIComponent(JSON.stringify({action:"login",email:emailVal,password:pwdVal}));
-    const res=await fetch(SCRIPT_URL+"?payload="+params+"&t="+Date.now());
-    const data=await res.json();
+    // Send login as direct GET params
+    const url=SCRIPT_URL+"?action=login&email="+encodeURIComponent(emailVal)+"&password="+encodeURIComponent(pwdVal)+"&t="+Date.now();
+    const res=await fetch(url);
+    const text=await res.text();
     hideLoader();
+    let data;
+    try{ data=JSON.parse(text); }catch(e){ er.textContent="Parse error: "+text.substring(0,200); er.style.display="block"; return; }
     if(data.error){er.textContent=data.error;er.style.display="block";return;}
-    if(!data.token||!data.name){er.textContent="Login failed: no token received. Please try again.";er.style.display="block";return;}
+    if(!data.token||!data.name){er.textContent="Got: "+JSON.stringify(data).substring(0,200);er.style.display="block";return;}
     sessionToken=data.token;
     currentUser=data.name;
     isAdmin=false;
     enterApp();
   }catch(e){
     hideLoader();
-    er.textContent="Error: "+e.message+". Please try again.";er.style.display="block";
+    er.textContent="Error: "+e.message;er.style.display="block";
   }
 }
 function doAdminLogin(){
