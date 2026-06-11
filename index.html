@@ -391,6 +391,7 @@ async function doEmpLogin(){
     const res=await fetch(url);
     const text=await res.text();
     hideLoader();
+    alert("RAW RESPONSE: " + text.substring(0,300));
     let data;
     try{ data=JSON.parse(text); }catch(e){ er.textContent="Parse error: "+text.substring(0,200); er.style.display="block"; return; }
     if(data.error){er.textContent=data.error;er.style.display="block";return;}
