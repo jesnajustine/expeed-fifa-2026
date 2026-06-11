@@ -621,7 +621,7 @@ function matchCardNew(m){
     }
   } else if(!done&&closed){
     if(mp)body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> Locked: '+strip(pLabel(mp,m))+'</span></div>';
-    else body='<p style="font-size:13px;color:var(--text-3);margin-top:6px">Predictions closed &mdash; no pick submitted.</p>';
+    else body='<p style="font-size:13px;color:var(--text-3);margin-top:6px">Predictions closed.</p>';
   } else if(done){
     const ok=mp&&mp===m.result,wr=mp&&mp!==m.result;
     const correct=Object.values(state.predictions[m.id]||{}).filter(p=>p===m.result).length;
@@ -928,7 +928,7 @@ async function updateTBD(mid){
   const an=document.getElementById("tbd-a-"+mid).value.trim();
   if(!hn||!an){toast("Please enter both team names.","error");return;}
   showLoader("Updating...");
-  const res=await apiPost({action:"updateTeams",adminToken:ADMIN_PASS,matchId:mid,home:hn,away:an});
+  const res=await apiPost({action:"updateTeams",adminToken:"Kakkanad2026fifa",matchId:mid,home:hn,away:an});
   hideLoader();
   if(res.error){toast(res.error,"error");return;}
   const m=state.matches.find(x=>x.id===mid);if(m){m.home=hn;m.away=an;}
@@ -936,7 +936,7 @@ async function updateTBD(mid){
 }
 async function setResult(mid,r){
   showLoader("Saving result...");
-  const res=await apiPost({action:"setResult",adminToken:ADMIN_PASS,matchId:mid,result:r});
+  const res=await apiPost({action:"setResult",adminToken:"Kakkanad2026fifa",matchId:mid,result:r});
   hideLoader();
   if(res.error){toast(res.error,"error");return;}
   const m=state.matches.find(x=>x.id===mid);if(m)m.result=r;
@@ -944,7 +944,7 @@ async function setResult(mid,r){
 }
 async function clearResult(mid){
   showLoader("Clearing...");
-  const res=await apiPost({action:"clearResult",adminToken:ADMIN_PASS,matchId:mid});
+  const res=await apiPost({action:"clearResult",adminToken:"Kakkanad2026fifa",matchId:mid});
   hideLoader();
   if(res.error){toast(res.error,"error");return;}
   const m=state.matches.find(x=>x.id===mid);if(m)m.result=null;
