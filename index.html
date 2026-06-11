@@ -845,6 +845,31 @@ function buildVL(){
   }).join("");
 }
 
+const TEAMS=["Algeria", "Argentina", "Australia", "Austria", "Belgium", "Bosnia", "Brazil", "Cameroon", "Canada", "Cape Verde", "Colombia", "Costa Rica", "Croatia", "Curacao", "Czechia", "DR Congo", "Denmark", "Ecuador", "Egypt", "England", "France", "Germany", "Ghana", "Haiti", "Honduras", "Iran", "Iraq", "Ivory Coast", "Japan", "Jordan", "Mexico", "Morocco", "Netherlands", "New Zealand", "Norway", "Panama", "Paraguay", "Poland", "Portugal", "Qatar", "Saudi Arabia", "Scotland", "Senegal", "Serbia", "South Africa", "South Korea", "Spain", "Sweden", "Switzerland", "Tunisia", "Turkiye", "USA", "Uruguay", "Uzbekistan", "Wales"];
+
+function tbdAC(input, inputId, listId){
+  const val = input.value.trim();
+  const list = document.getElementById(listId);
+  if(!val){list.style.display="none";list.innerHTML="";return;}
+  const q = val.toLowerCase();
+  const hits = TEAMS.filter(t=>t.toLowerCase().includes(q)).slice(0,8);
+  if(!hits.length){list.style.display="none";return;}
+  list.innerHTML = hits.map(t=>{
+    const f = flag(t);
+    const hi = t.replace(new RegExp("("+val.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+")","gi"),"<em>$1</em>");
+    return '<div class="ac-item" style="display:flex;align-items:center;gap:8px" onmousedown="tbdSelect(\''+ inputId +'\',\''+ listId +'\',\''+ t +'\')">'
+      +'<span>'+ f +'</span><span>'+ hi +'</span></div>';
+  }).join("");
+  list.style.display="block";
+}
+
+function tbdSelect(inputId, listId, team){
+  const input = document.getElementById(inputId);
+  const list = document.getElementById(listId);
+  if(input) input.value = team;
+  if(list){list.style.display="none";list.innerHTML="";}
+}
+
 function rAdmin(){
   const el=document.getElementById("tab-admin");
   let h='<div class="page-hdr"><h2>Admin Panel</h2><p>Update team names and enter match results</p></div>';
