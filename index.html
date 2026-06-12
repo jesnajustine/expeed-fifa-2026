@@ -502,7 +502,7 @@ function goTab(tab){
   document.querySelectorAll(".bottom-nav button").forEach((b,i)=>b.classList.toggle("active",TABS[i]===tab));
   if(tab==="today")rToday();
   if(tab==="all")rAll();
-  if(tab==="leaderboard")rLB();
+  if(tab==="leaderboard"){rLB();}
   if(tab==="history")rHistory();
   if(tab==="votes")rVotes();
   if(tab==="admin")rAdmin();
@@ -749,6 +749,14 @@ function computeLB(){
   all.forEach(u=>{if(!s[u]){s[u]=0;b[u]={correct:0,total:0};}});
   return Object.entries(s).sort((a,b2)=>b2[1]-a[1]).map(([n,sc])=>({name:n,score:sc,...b[n]}));
 }
+async function refreshLB(){
+  showLoader("Refreshing leaderboard...");
+  await refreshState();
+  hideLoader();
+  rLB();
+  toast("Leaderboard updated!");
+}
+
 function rLB(){
   const el=document.getElementById("tab-leaderboard");
   const done=state.matches.filter(m=>m.result).length;
