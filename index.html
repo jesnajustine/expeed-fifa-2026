@@ -537,8 +537,14 @@ document.addEventListener("click",function(e){
 // ── TABS ─────────────────────────────────────────────────────
 function goTab(tab){
   TABS.forEach(t=>document.getElementById("tab-"+t).style.display=t===tab?"block":"none");
-  document.querySelectorAll(".sidebar .nav-btn").forEach((b,i)=>b.classList.toggle("active",TABS[i]===tab));
-  document.querySelectorAll(".bottom-nav button").forEach((b,i)=>b.classList.toggle("active",TABS[i]===tab));
+  document.querySelectorAll(".sidebar .nav-btn").forEach(b=>{
+    const t=b.getAttribute("onclick").match(/goTab\('(\w+)'\)/);
+    if(t)b.classList.toggle("active",t[1]===tab);
+  });
+  document.querySelectorAll(".bottom-nav button").forEach(b=>{
+    const t=b.getAttribute("onclick").match(/goTab\('(\w+)'\)/);
+    if(t)b.classList.toggle("active",t[1]===tab);
+  });
   if(tab==="today")rToday();
   if(tab==="all")rAll();
   if(tab==="leaderboard"){rLB();}
