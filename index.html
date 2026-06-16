@@ -263,7 +263,7 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--text);min-
       </div>
     </nav>
     <main class="content">
-      <div id="tab-today"></div>
+      <div id="tab-today" style="display:none"></div>
       <div id="tab-all" style="display:none"></div>
       <div id="tab-leaderboard" style="display:none"></div>
       <div id="tab-history" style="display:none"></div>
@@ -288,6 +288,7 @@ const EMAIL_PWD={};
 const FLAGS      = {"Brazil":"🇧🇷","Argentina":"🇦🇷","Germany":"🇩🇪","France":"🇫🇷","England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Spain":"🇪🇸","Portugal":"🇵🇹","Netherlands":"🇳🇱","Italy":"🇮🇹","Belgium":"🇧🇪","Croatia":"🇭🇷","Morocco":"🇲🇦","USA":"🇺🇸","Mexico":"🇲🇽","Japan":"🇯🇵","South Korea":"🇰🇷","Korea Republic":"🇰🇷","Australia":"🇦🇺","Senegal":"🇸🇳","Ghana":"🇬🇭","Uruguay":"🇺🇾","Switzerland":"🇨🇭","Denmark":"🇩🇰","Poland":"🇵🇱","Serbia":"🇷🇸","Ecuador":"🇪🇨","Canada":"🇨🇦","Cameroon":"🇨🇲","Tunisia":"🇹🇳","Wales":"🏴󠁧󠁢󠁷󠁬󠁳󠁿","Saudi Arabia":"🇸🇦","Iran":"🇮🇷","Qatar":"🇶🇦","India":"🇮🇳","Costa Rica":"🇨🇷","Panama":"🇵🇦","South Africa":"🇿🇦","Czechia":"🇨🇿","Bosnia":"🇧🇦","Paraguay":"🇵🇾","Turkiye":"🇹🇷","Curacao":"🇨🇼","Ivory Coast":"🇨🇮","Sweden":"🇸🇪","Cape Verde":"🇨🇻","New Zealand":"🇳🇿","Egypt":"🇪🇬","Norway":"🇳🇴","Algeria":"🇩🇿","Austria":"🇦🇹","Jordan":"🇯🇴","DR Congo":"🇨🇩","Uzbekistan":"🇺🇿","Colombia":"🇨🇴","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿","Haiti":"🇭🇹","Iraq":"🇮🇶","Honduras":"🇭🇳","TBD":"❓"};
 const SK = "expeed-wc2026-gs1";
 let sessionToken = null;
+let appReady = false;
 const SCRIPT_URL_HARDCODED = "https://script.google.com/macros/s/AKfycby6FNb7L2lUWvC8q-xAu7k_Ym8bGK1ljhJWP1t9SxRx7iwr6oI6iWb28uarij1FCsLG/exec";
 let SCRIPT_URL   = "https://script.google.com/macros/s/AKfycby6FNb7L2lUWvC8q-xAu7k_Ym8bGK1ljhJWP1t9SxRx7iwr6oI6iWb28uarij1FCsLG/exec";
 
@@ -439,7 +440,7 @@ async function enterApp(){
   document.getElementById("admin-mobile-btn").style.display=isAdmin?"flex":"none";
   document.getElementById("screen-login").classList.remove("active");
   document.getElementById("screen-main").classList.add("active");
-  goTab("today");
+  if(!appReady){ appReady=true; goTab("today"); }
 }
 
 // Restore session from localStorage on page load
@@ -475,7 +476,7 @@ async function doLogout(){
     }catch(e){}
   }
   sessionToken=null;
-  currentUser=null; isAdmin=false;
+  currentUser=null; isAdmin=false; appReady=false;
   localStorage.removeItem(SK+"-token");
   localStorage.removeItem(SK+"-user");
   localStorage.removeItem(SK+"-admin");
