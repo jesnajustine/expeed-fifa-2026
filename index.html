@@ -431,7 +431,6 @@ function doAdminLogin(){
   currentUser="Admin"; isAdmin=true; sessionToken="admin"; enterApp();
 }
 async function enterApp(){
-  // URL hardcoded
   const ini=currentUser.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
   document.getElementById("user-avatar").textContent=ini;
   document.getElementById("user-name-top").textContent=currentUser+(isAdmin?" (Admin)":"");
@@ -440,7 +439,10 @@ async function enterApp(){
   document.getElementById("admin-mobile-btn").style.display=isAdmin?"flex":"none";
   document.getElementById("screen-login").classList.remove("active");
   document.getElementById("screen-main").classList.add("active");
-  await // Restore session from localStorage on page load
+  goTab("today");
+}
+
+// Restore session from localStorage on page load
 (async function(){
   const savedToken = localStorage.getItem(SK+"-token");
   const savedUser  = localStorage.getItem(SK+"-user");
@@ -455,11 +457,8 @@ async function enterApp(){
   } else {
     loadState();
   }
-  // Safety fallback - hide loader after 8 seconds no matter what
   setTimeout(()=>hideLoader(), 8000);
 })();
-  goTab("today");
-}
 function toggleLogoutMenu(){
   const menu = document.getElementById('logout-menu');
   const isOpen = menu.style.display === 'block';
