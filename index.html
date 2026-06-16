@@ -609,11 +609,23 @@ function selectPred(mid,choice){
   const lbl=document.getElementById("sel-label-"+mid);
   if(conf)conf.style.display="block";
   if(lbl)lbl.textContent=pLabelText(choice,m);
-  // Update goal input labels based on selection
+  // Update goal input labels
   const hGoalLbl=document.getElementById("glbl-h-"+mid);
   const aGoalLbl=document.getElementById("glbl-a-"+mid);
-  if(hGoalLbl)hGoalLbl.textContent=m.home+" goals";
-  if(aGoalLbl)aGoalLbl.textContent=m.away+" goals";
+  const hInput=document.getElementById("goals-h-"+mid);
+  const aInput=document.getElementById("goals-a-"+mid);
+  if(choice==="draw"){
+    // For draw: show one label "Goals each", sync both inputs
+    if(hGoalLbl)hGoalLbl.textContent="Goals each";
+    if(aGoalLbl)aGoalLbl.style.display="none";
+    if(aInput){aInput.style.display="none";}
+    if(hInput){hInput.oninput=function(){if(aInput)aInput.value=this.value;};}
+  } else {
+    if(hGoalLbl)hGoalLbl.textContent=m.home+" goals";
+    if(aGoalLbl){aGoalLbl.textContent=m.away+" goals";aGoalLbl.style.display="";}
+    if(aInput)aInput.style.display="";
+    if(hInput)hInput.oninput=null;
+  }
 }
 function cancelPred(mid){
   delete pendingPreds[mid];
@@ -637,13 +649,12 @@ async function confirmPred(mid){
   const awayGoals=ag?ag.value.trim():"";
   if(homeGoals===""||awayGoals===""){toast("Please enter the predicted score.","error");return;}
   const hNum=parseInt(homeGoals);
-  const aNum=parseInt(awayGoals);
+  // For draw, away goals = home goals
+  const aNum=pred.result==="draw"?hNum:parseInt(awayGoals);
   if(isNaN(hNum)||isNaN(aNum)||hNum<0||aNum<0){toast("Please enter valid goal numbers.","error");return;}
-  // Validate goals match selected result
   const res=pred.result;
-  if(res==="home"&&hNum<=aNum){toast("Score must show "+pred.result==="home"?"home team winning.":"correct result.","error");return;}
-  if(res==="away"&&aNum<=hNum){toast("Score must show away team winning.","error");return;}
-  if(res==="draw"&&hNum!==aNum){toast("Score must be equal for a draw.","error");return;}
+  if(res==="home"&&hNum<=aNum){toast("Home goals must be more than away goals for a home win.","error");return;}
+  if(res==="away"&&aNum<=hNum){toast("Away goals must be more than home goals for an away win.","error");return;}
   await submitPred(mid,pred.result,hNum,aNum);
   delete pendingPreds[mid];
 }
