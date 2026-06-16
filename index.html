@@ -319,8 +319,26 @@ function todayLbl(){ return nowIST().toLocaleDateString("en-IN",{weekday:"long",
 function isTBD(m){ return m.home==="TBD"||m.away==="TBD"; }
 function pLabel(p,m){ if(p==="home")return flag(m.home)+" "+m.home+" wins"; if(p==="draw")return "\u{1F91D} Draw"; if(p==="away")return flag(m.away)+" "+m.away+" wins"; return p; }
 function pLabelText(p,m){ if(p==="home")return m.home+" wins"; if(p==="draw")return "Draw"; if(p==="away")return m.away+" wins"; return p; }
-function rText(m){ if(!m.result)return "vs"; if(m.result==="home")return m.home+" won"; if(m.result==="draw")return "Draw"; return m.away+" won"; }
-function getPred(mid){ return state.predictions[mid]&&state.predictions[mid][currentUser]; }
+function rText(m){
+  if(!m.result) return "vs";
+  const res=getMatchResult(m);
+  if(!res) return "vs";
+  const score=res.homeGoals!==null?" ("+res.homeGoals+"-"+res.awayGoals+")":"";
+  if(res.outcome==="home") return m.home+" won"+score;
+  if(res.outcome==="draw") return "Draw"+score;
+  return m.away+" won"+score;
+}
+function getPred(mid){
+  const p=state.predictions[mid]&&state.predictions[mid][currentUser];
+  if(!p) return null;
+  // Handle both old format (string) and new format (object)
+  if(typeof p==="string") return {result:p,homeGoals:null,awayGoals:null};
+  return p;
+}
+function getPredResult(mid){
+  const p=getPred(mid);
+  return p?p.result:null;
+}
 function hasPred(mid){ return !!getPred(mid); }
 function strip(s){ return s.replace(/[^\u0000-\u007E]/g," ").replace(/\s+/g," ").trim(); }
 function toast(msg,type){ type=type||"success"; const t=document.getElementById("toast"); t.textContent=msg; t.className="toast "+type+" show"; setTimeout(()=>t.className="toast",3000); }
@@ -398,6 +416,8 @@ async function doEmpLogin(){
     sessionToken=data.token;
     currentUser=data.name;
     isAdmin=false;
+    localStorage.setItem(SK+"-token", data.token);
+    localStorage.setItem(SK+"-user", data.name);
     enterApp();
   }catch(e){
     hideLoader();
@@ -421,7 +441,21 @@ async function enterApp(){
   document.getElementById("admin-mobile-btn").style.display=isAdmin?"flex":"none";
   document.getElementById("screen-login").classList.remove("active");
   document.getElementById("screen-main").classList.add("active");
-  await loadState();
+  await // Restore session from localStorage on page load
+(async function(){
+  const savedToken = localStorage.getItem(SK+"-token");
+  const savedUser  = localStorage.getItem(SK+"-user");
+  const savedAdmin = localStorage.getItem(SK+"-admin");
+  if(savedToken && savedUser){
+    sessionToken = savedToken;
+    currentUser  = savedUser;
+    isAdmin      = savedAdmin === "1";
+    await loadState();
+    enterApp();
+  } else {
+    loadState();
+  }
+})();
   goTab("today");
 }
 function toggleLogoutMenu(){
@@ -441,6 +475,9 @@ async function doLogout(){
   }
   sessionToken=null;
   currentUser=null; isAdmin=false;
+  localStorage.removeItem(SK+"-token");
+  localStorage.removeItem(SK+"-user");
+  localStorage.removeItem(SK+"-admin");
   document.getElementById("logout-menu").style.display="none";
   document.getElementById("user-pill").style.display="none";
   document.getElementById("screen-main").classList.remove("active");
@@ -509,19 +546,19 @@ function goTab(tab){
 }
 
 // ── SUBMIT PREDICTION ────────────────────────────────────────
-async function submitPred(mid,choice){
+async function submitPred(mid,choice,homeGoals,awayGoals){
   const m=state.matches.find(x=>x.id===mid); if(!m)return;
   if(isAdmin){toast("Admins cannot submit predictions.","error");return;}
   if(isTBD(m)){toast("Teams not yet confirmed for this match.","error");return;}
   if(isCutoff(m)){toast("Predictions are closed for this match.","error");return;}
   if(hasPred(mid)){toast("You have already predicted this match.","error");return;}
   showLoader("Saving prediction...");
-  const res = await apiPost({action:"predict", token:sessionToken, matchId:mid, choice});
+  const res = await apiPost({action:"predict", token:sessionToken, matchId:mid, choice, homeGoals:homeGoals||null, awayGoals:awayGoals||null});
   hideLoader();
   if(res.error){toast(res.error,"error");return;}
   // Update local state immediately
   if(!state.predictions[mid])state.predictions[mid]={};
-  state.predictions[mid][currentUser]=choice;
+  state.predictions[mid][currentUser]={result:choice,homeGoals:homeGoals||null,awayGoals:awayGoals||null};
   lastSaved=mid;
   toast("Prediction saved: "+pLabelText(choice,m));
   rToday(); rAll();
@@ -538,29 +575,24 @@ function isWithin3Days(m){
   const now=Date.now();
   const matchTime=new Date(m.date).getTime();
   if(matchTime<now) return false;
-  // If the match is today (IST), always open
-  if(isTodayIST(m.date)) return true;
-  // Otherwise find the next match day that isn't today
-  const todayStr=nowIST().toISOString().substring(0,10);
+  // Open predictions for the next 2 match days
   const futureDates=[...new Set(
     state.matches
-      .filter(x=>!isTBD(x)&&new Date(x.date).getTime()>now&&x.date.substring(0,10)!==todayStr)
+      .filter(x=>!isTBD(x)&&new Date(x.date).getTime()>now)
       .map(x=>x.date.substring(0,10))
   )].sort();
-  // If there are no matches today, open the next match day
-  const todayMatches=state.matches.filter(x=>!isTBD(x)&&isTodayIST(x.date)&&new Date(x.date).getTime()>now);
-  if(todayMatches.length===0&&futureDates.length>0){
-    return m.date.substring(0,10)===futureDates[0];
-  }
-  return false;
+  if(!futureDates.length) return false;
+  const next2Days=futureDates.slice(0,2);
+  return next2Days.includes(m.date.substring(0,10));
 }
+
 function daysUntil(m){
   return Math.ceil((new Date(m.date).getTime()-Date.now())/(24*60*60*1000));
 }
 
 function selectPred(mid,choice){
   const m=state.matches.find(x=>x.id===mid);if(!m)return;
-  pendingPreds[mid]=choice;
+  pendingPreds[mid]={result:choice};
   ["home","draw","away"].forEach(c=>{
     const btn=document.getElementById("pb-"+mid+"-"+c);
     if(btn)btn.className="pred-btn"+(c===choice?" sel-"+(c==="home"?"home":c==="draw"?"draw":"away"):"");
@@ -569,6 +601,11 @@ function selectPred(mid,choice){
   const lbl=document.getElementById("sel-label-"+mid);
   if(conf)conf.style.display="block";
   if(lbl)lbl.textContent=pLabelText(choice,m);
+  // Update goal input labels based on selection
+  const hGoalLbl=document.getElementById("glbl-h-"+mid);
+  const aGoalLbl=document.getElementById("glbl-a-"+mid);
+  if(hGoalLbl)hGoalLbl.textContent=m.home+" goals";
+  if(aGoalLbl)aGoalLbl.textContent=m.away+" goals";
 }
 function cancelPred(mid){
   delete pendingPreds[mid];
@@ -578,11 +615,28 @@ function cancelPred(mid){
   });
   const conf=document.getElementById("confirm-"+mid);
   if(conf)conf.style.display="none";
+  const hg=document.getElementById("goals-h-"+mid);
+  const ag=document.getElementById("goals-a-"+mid);
+  if(hg)hg.value="";
+  if(ag)ag.value="";
 }
 async function confirmPred(mid){
-  const choice=pendingPreds[mid];
-  if(!choice){toast("Please select a prediction first.","error");return;}
-  await submitPred(mid,choice);
+  const pred=pendingPreds[mid];
+  if(!pred||!pred.result){toast("Please select a prediction first.","error");return;}
+  const hg=document.getElementById("goals-h-"+mid);
+  const ag=document.getElementById("goals-a-"+mid);
+  const homeGoals=hg?hg.value.trim():"";
+  const awayGoals=ag?ag.value.trim():"";
+  if(homeGoals===""||awayGoals===""){toast("Please enter the predicted score.","error");return;}
+  const hNum=parseInt(homeGoals);
+  const aNum=parseInt(awayGoals);
+  if(isNaN(hNum)||isNaN(aNum)||hNum<0||aNum<0){toast("Please enter valid goal numbers.","error");return;}
+  // Validate goals match selected result
+  const res=pred.result;
+  if(res==="home"&&hNum<=aNum){toast("Score must show "+pred.result==="home"?"home team winning.":"correct result.","error");return;}
+  if(res==="away"&&aNum<=hNum){toast("Score must show away team winning.","error");return;}
+  if(res==="draw"&&hNum!==aNum){toast("Score must be equal for a draw.","error");return;}
+  await submitPred(mid,pred.result,hNum,aNum);
   delete pendingPreds[mid];
 }
 
@@ -602,7 +656,7 @@ function matchCardNew(m){
     body='<div class="tbd-warn"><i class="ti ti-clock" style="font-size:15px"></i> Teams will be confirmed before this match.</div>';
   } else if(!done&&!closed&&within3&&!isAdmin){
     if(mp){
-      body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> Your prediction: '+strip(pLabel(mp,m))+'</span></div>';
+      body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> '+strip(pLabel(mp.result,m))+(mp.homeGoals!==null?' &nbsp;('+mp.homeGoals+'-'+mp.awayGoals+')':'')+'</span></div>';
     } else {
       body='<div class="pred-my-pick"><span style="font-size:13px;color:var(--text-3)">Select your prediction, then confirm &mdash; once only</span></div>'
         +'<div class="pred-group" id="pg-'+m.id+'">'
@@ -610,8 +664,22 @@ function matchCardNew(m){
         +'<button class="pred-btn" type="button" id="pb-'+m.id+'-draw" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">&#129309;<br>Draw</button>'
         +'<button class="pred-btn" type="button" id="pb-'+m.id+'-away" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="away">'+flag(m.away)+'<br>'+m.away+'<span class="pred-sub">wins</span></button>'
         +'</div>'
-        +'<div id="confirm-'+m.id+'" style="display:none;margin-top:10px;text-align:center">'
-        +'<div style="font-size:13px;color:var(--text-2);margin-bottom:8px">You selected: <strong id="sel-label-'+m.id+'"></strong></div>'
+        +'<div id="confirm-'+m.id+'" style="display:none;margin-top:12px">'
+        +'<div style="font-size:13px;color:var(--text-2);margin-bottom:10px;text-align:center">You selected: <strong id="sel-label-'+m.id+'"></strong></div>'
+        +'<div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">'
+        +'<div style="font-size:12px;font-weight:700;color:var(--text-3);text-align:center;margin-bottom:8px;letter-spacing:.05em;text-transform:uppercase">Predicted Score</div>'
+        +'<div style="display:flex;align-items:center;justify-content:center;gap:12px">'
+        +'<div style="text-align:center">'
+        +'<div style="font-size:11px;color:var(--text-3);margin-bottom:4px" id="glbl-h-'+m.id+'">'+m.home+' goals</div>'
+        +'<input type="number" id="goals-h-'+m.id+'" min="0" max="20" placeholder="0" style="width:60px;padding:8px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:20px;font-weight:700;color:var(--navy)">'
+        +'</div>'
+        +'<div style="font-size:18px;font-weight:700;color:var(--text-3)">-</div>'
+        +'<div style="text-align:center">'
+        +'<div style="font-size:11px;color:var(--text-3);margin-bottom:4px" id="glbl-a-'+m.id+'">'+m.away+' goals</div>'
+        +'<input type="number" id="goals-a-'+m.id+'" min="0" max="20" placeholder="0" style="width:60px;padding:8px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:20px;font-weight:700;color:var(--navy)">'
+        +'</div>'
+        +'</div>'
+        +'</div>'
         +'<div style="display:flex;gap:8px;justify-content:center">'
         +'<button type="button" onclick="cancelPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:8px 20px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);background:transparent;font-family:Barlow,sans-serif;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-2)">Cancel</button>'
         +'<button type="button" onclick="confirmPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:8px 24px;border:none;border-radius:var(--radius-sm);background:var(--red);font-family:Barlow,sans-serif;font-size:13px;font-weight:700;cursor:pointer;color:#fff">&#10003; Confirm Prediction</button>'
@@ -620,10 +688,10 @@ function matchCardNew(m){
         +'<div style="margin-top:8px;text-align:center;font-size:12px;color:var(--text-4)">'+pc+' player'+(pc!==1?'s':'')+" predicted this match</div>";
     }
   } else if(!done&&closed){
-    if(mp)body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> Locked: '+strip(pLabel(mp,m))+'</span></div>';
+    if(mp)body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> Locked: '+strip(pLabel(mp.result,m))+(mp.homeGoals!==null?' ('+mp.homeGoals+'-'+mp.awayGoals+')':'')+'</span></div>';
     else body='<p style="font-size:13px;color:var(--text-3);margin-top:6px">Predictions closed.</p>';
   } else if(done){
-    const ok=mp&&mp===m.result,wr=mp&&mp!==m.result;
+    const mpResult=mp?mp.result:null;const ok=mpResult&&mpResult===m.result;const wr=mpResult&&mpResult!==m.result;
     const correct=Object.values(state.predictions[m.id]||{}).filter(p=>p===m.result).length;
     body='<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<span style="font-size:13px;color:var(--text-2)">Result: <strong>'+rText(m)+'</strong></span>'
@@ -677,7 +745,7 @@ function rToday(){
 function rAll(){
   const el=document.getElementById("tab-all");
   let h='<div class="page-hdr"><h2 style="font-family:Barlow,sans-serif;font-weight:700;font-size:22px;letter-spacing:0">All Matches</h2></div>';
-  h+='<div style="background:#e8edf8;border:1px solid rgba(13,27,62,0.15);border-radius:var(--radius);padding:10px 14px;margin-bottom:1.25rem;font-size:13px;color:var(--navy-light);display:flex;align-items:center;gap:8px"><i class="ti ti-info-circle" style="font-size:15px;flex-shrink:0"></i> All matches are listed below. You can only predict the next day&#39;s match. Predictions close 30 minutes before each match starts.</div>';
+  h+='<div style="background:#e8edf8;border:1px solid rgba(13,27,62,0.15);border-radius:var(--radius);padding:10px 14px;margin-bottom:1.25rem;font-size:13px;color:var(--navy-light);display:flex;align-items:center;gap:8px"><i class="ti ti-info-circle" style="font-size:15px;flex-shrink:0"></i> All matches are listed below. You can predict matches from the next 2 match days. Predictions close 30 minutes before each match starts.</div>';
 
   function miniCard(m){
     const mp=getPred(m.id),isDone=!!m.result,isClosed=isCutoff(m),today=isTodayIST(m.date);
@@ -690,8 +758,17 @@ function rAll(){
         +'<button class="pred-btn" type="button" id="pb-'+m.id+'-draw" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">Draw</button>'
         +'<button class="pred-btn" type="button" id="pb-'+m.id+'-away" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="away">'+flag(m.away)+' '+m.away+' wins</button>'
         +'</div>'
-        +'<div id="confirm-'+m.id+'" style="display:none;margin-top:8px;text-align:center">'
-        +'<div style="font-size:13px;color:var(--text-2);margin-bottom:6px">Selected: <strong id="sel-label-'+m.id+'"></strong></div>'
+        +'<div id="confirm-'+m.id+'" style="display:none;margin-top:8px">'
+        +'<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;text-align:center">Selected: <strong id="sel-label-'+m.id+'"></strong></div>'
+        +'<div style="background:var(--bg);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px">'
+        +'<div style="font-size:11px;font-weight:700;color:var(--text-3);text-align:center;margin-bottom:6px;text-transform:uppercase">Predicted Score</div>'
+        +'<div style="display:flex;align-items:center;justify-content:center;gap:10px">'
+        +'<div style="text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px" id="glbl-h-'+m.id+'">'+m.home+'</div>'
+        +'<input type="number" id="goals-h-'+m.id+'" min="0" max="20" placeholder="0" style="width:50px;padding:6px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
+        +'<div style="font-size:16px;font-weight:700;color:var(--text-3)">-</div>'
+        +'<div style="text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px" id="glbl-a-'+m.id+'">'+m.away+'</div>'
+        +'<input type="number" id="goals-a-'+m.id+'" min="0" max="20" placeholder="0" style="width:50px;padding:6px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
+        +'</div></div>'
         +'<div style="display:flex;gap:8px;justify-content:center">'
         +'<button type="button" onclick="cancelPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:6px 14px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);background:transparent;font-family:Barlow,sans-serif;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-2)">Cancel</button>'
         +'<button type="button" onclick="confirmPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:6px 18px;border:none;border-radius:var(--radius-sm);background:var(--red);font-family:Barlow,sans-serif;font-size:12px;font-weight:700;cursor:pointer;color:#fff">&#10003; Confirm</button>'
@@ -736,50 +813,57 @@ function rAll(){
   el.innerHTML=h;
 }
 
+function getMatchResult(m){
+  if(!m.result) return null;
+  if(m.result.includes(":")){
+    const parts=m.result.split(":");
+    return {outcome:parts[0],homeGoals:parseInt(parts[1]),awayGoals:parseInt(parts[2])};
+  }
+  return {outcome:m.result,homeGoals:null,awayGoals:null};
+}
+function calcPoints(pred,matchResult){
+  if(!pred||!matchResult) return 0;
+  const pRes=typeof pred==="string"?pred:pred.result;
+  const res=matchResult.outcome;
+  if(pRes!==res) return 0;
+  if(pred.homeGoals!==null&&pred.homeGoals!==undefined&&
+     matchResult.homeGoals!==null&&matchResult.homeGoals!==undefined&&
+     parseInt(pred.homeGoals)===matchResult.homeGoals&&
+     parseInt(pred.awayGoals)===matchResult.awayGoals) return 3;
+  return 1;
+}
 function computeLB(){
   const s={},b={};
   state.matches.forEach(m=>{
     if(!m.result)return;
-    Object.entries(state.predictions[m.id]||{}).forEach(([u,p])=>{
-      if(!s[u]){s[u]=0;b[u]={correct:0,total:0};}
-      b[u].total++;if(p===m.result){s[u]++;b[u].correct++;}
+    const matchResult=getMatchResult(m);
+    Object.entries(state.predictions[m.id]||{}).forEach(([u,pred])=>{
+      if(!s[u]){s[u]=0;b[u]={perfect:0,correct:0,total:0};}
+      b[u].total++;
+      const pts=calcPoints(pred,matchResult);
+      s[u]+=pts;
+      if(pts===3)b[u].perfect++;
+      else if(pts===1)b[u].correct++;
     });
   });
   const all=new Set();Object.values(state.predictions).forEach(mp=>Object.keys(mp).forEach(u=>all.add(u)));
-  all.forEach(u=>{if(!s[u]){s[u]=0;b[u]={correct:0,total:0};}});
-  return Object.entries(s).sort((a,b2)=>b2[1]-a[1]).map(([n,sc])=>({name:n,score:sc,...b[n]}));
-}
-async function refreshLB(){
-  showLoader("Refreshing leaderboard...");
-  await refreshState();
-  hideLoader();
-  rLB();
-  toast("Leaderboard updated!");
+  all.forEach(u=>{if(!s[u]){s[u]=0;b[u]={perfect:0,correct:0,total:0};}});
+  return Object.entries(s).sort((a,b2)=>{
+    if(b2[1]!==a[1])return b2[1]-a[1];
+    return a[0].localeCompare(b2[0]);
+  }).map(([n,sc])=>({name:n,score:sc,...b[n]}));
 }
 
 function rLB(){
   const el=document.getElementById("tab-leaderboard");
+  const lb=computeLB();
   const done=state.matches.filter(m=>m.result).length;
   const open=state.matches.filter(m=>!isCutoff(m)&&!m.result&&!isTBD(m)&&isWithin3Days(m)).length;
-  // Build scores
-  const s={},b={};
-  state.matches.forEach(m=>{
-    if(!m.result)return;
-    Object.entries(state.predictions[m.id]||{}).forEach(([u,p])=>{
-      if(!s[u]){s[u]=0;b[u]={correct:0,total:0};}
-      b[u].total++;if(p===m.result){s[u]++;b[u].correct++;}
-    });
-  });
-  const all=new Set();Object.values(state.predictions).forEach(mp=>Object.keys(mp).forEach(u=>all.add(u)));
-  all.forEach(u=>{if(!s[u]){s[u]=0;b[u]={correct:0,total:0};}});
-  // Sort: by score descending, then alphabetically
-  const lb=Object.entries(s).sort((a,b2)=>{
-    if(b2[1]!==a[1])return b2[1]-a[1];
-    return a[0].localeCompare(b2[0]);
-  }).map(([n,sc])=>({name:n,score:sc,...b[n]}));
-
   let h='<div class="page-hdr"><h2>Leaderboard</h2></div>'
     +'<div style="text-align:right;margin-bottom:10px"><button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 12px" onclick="refreshLB()"><i class="ti ti-refresh"></i> Refresh</button></div>'
+    +'<div style="background:#e8edf8;border:1px solid rgba(13,27,62,0.15);border-radius:var(--radius);padding:8px 14px;margin-bottom:1rem;font-size:12px;color:var(--navy-light);display:flex;align-items:center;gap:10px">'
+    +'<span>&#127919; Perfect score = 3 pts</span><span style="color:var(--text-4)">|</span><span>&#10003; Right result = 1 pt</span>'
+    +'</div>'
     +'<div class="stat-grid">'
     +'<div class="stat-box"><div class="num">'+lb.length+'</div><div class="lbl">Employees who predicted</div></div>'
     +'<div class="stat-box"><div class="num">'+done+'</div><div class="lbl">Matches with results</div></div>'
@@ -790,70 +874,22 @@ function rLB(){
   let rank=1;
   for(let i=0;i<lb.length;i++){
     const p=lb[i];
-    // Same score as previous = same rank
     if(i>0&&lb[i].score<lb[i-1].score) rank=i+1;
     const med=rank===1?"&#129351;":rank===2?"&#129352;":rank===3?"&#129353;":"#"+rank;
     const me=p.name===currentUser;
     const gc=rank===1?"g1":rank===2?"g2":rank===3?"g3":"";
-    // Highlight all tied players at same rank
     const tied=lb.filter(x=>x.score===p.score).length>1;
     h+='<div class="lb-row '+(me?"me ":"")+gc+'">'
       +'<div class="lb-rank">'+med+'</div>'
-      +'<div class="lb-name">'+p.name+(me?' <span style="font-size:11px;color:var(--red);font-weight:700">(you)</span>':'')+(tied?' <span style="font-size:10px;color:var(--text-4);font-weight:500">tied</span>':'')+'</div>'
-      +'<div class="lb-right"><div class="lb-pts">'+p.score+' pts</div><div class="lb-detail">'+p.correct+'/'+p.total+' correct</div></div>'
-      +'</div>';
+      +'<div class="lb-name">'+p.name+(me?' <span style="font-size:11px;color:var(--red);font-weight:700">(you)</span>':'')
+      +(tied?' <span style="font-size:10px;color:var(--text-4);font-weight:500">tied</span>':'')+'</div>'
+      +'<div class="lb-right"><div class="lb-pts">'+p.score+' pts</div>'
+      +'<div class="lb-detail">&#127919; '+p.perfect+' &middot; &#10003; '+p.correct+'</div>'
+      +'</div></div>';
   }
   h+='</div>';el.innerHTML=h;
 }
-
-function rHistory(){
-  const el=document.getElementById("tab-history");
-  const rows=state.matches.map(m=>({m,pred:getPred(m.id)})).filter(r=>r.pred);
-  const correct=rows.filter(r=>r.m.result&&r.pred===r.m.result).length;
-  const settled=rows.filter(r=>r.m.result).length;
-  let h='<div class="page-hdr"><h2>My History</h2><p>Your predictions, '+currentUser+'</p></div>'
-    +'<div class="stat-grid"><div class="stat-box"><div class="num">'+rows.length+'</div><div class="lbl">Predicted</div></div><div class="stat-box"><div class="num">'+correct+'</div><div class="lbl">Correct</div></div><div class="stat-box"><div class="num">'+(settled>0?Math.round(correct/settled*100):0)+'%</div><div class="lbl">Accuracy</div></div></div>';
-  if(!rows.length){h+='<div class="empty"><i class="ti ti-history"></i><p>No predictions yet.</p></div>';el.innerHTML=h;return;}
-  rows.forEach(r=>{const m=r.m,p=r.pred,done=!!m.result,ok=p&&m.result&&p===m.result,wr=p&&m.result&&p!==m.result;
-    h+='<div class="card"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;font-size:14px;font-weight:700">'+flag(m.home)+' '+m.home+'</div><div style="font-size:12px;color:var(--text-3)">'+(done?rText(m):"vs")+'</div><div style="flex:1;text-align:right;font-size:14px;font-weight:700">'+m.away+' '+flag(m.away)+'</div></div><div class="match-meta"><span>'+fmtFull(m.date)+'</span><span>'+m.group+'</span><span class="badge" style="background:var(--offwhite);color:var(--text-2);border:1px solid var(--border-2)">'+strip(pLabel(p,m))+'</span>'+(done?'<span class="badge '+(ok?"b-win":wr?"b-loss":"")+'">'+  (ok?"&#10003; Correct":wr?"&#10007; Wrong":"Pending")+'</span>':'<span class="badge" style="background:var(--bg);color:var(--text-3)">Awaiting result</span>')+'</div></div>';
-  });
-  el.innerHTML=h;
-}
-
-function rVotes(){
-  const el=document.getElementById("tab-votes");
-  const voted=new Set();Object.values(state.predictions).forEach(mp=>Object.keys(mp).forEach(n=>voted.add(n)));
-  let h='<div class="page-hdr"><h2>Votes Overview</h2><p>Prediction split for every match &mdash; '+voted.size+' employees have participated so far</p></div>'
-    +'<div id="votes-list">'+buildVL()+"</div>";
-  el.innerHTML=h;
-}
-function buildVL(){
-  // Show: completed first, then open/closed, skip upcoming (no votes yet)
-  const done=state.matches.filter(m=>!!m.result&&!isTBD(m));
-  const active=state.matches.filter(m=>!m.result&&isCutoff(m)&&!isTBD(m));
-  const open=state.matches.filter(m=>!m.result&&!isCutoff(m)&&isWithin3Days(m)&&!isTBD(m));
-  const ms=[...done,...active,...open];
-  if(!ms.length)return '<div class="empty"><i class="ti ti-ghost"></i><p>No matches with predictions yet.</p></div>';
-  return ms.map(m=>{
-    const preds=state.predictions[m.id]||{},total=Object.keys(preds).length;
-    const hC=Object.values(preds).filter(v=>v==="home").length;
-    const dC=Object.values(preds).filter(v=>v==="draw").length;
-    const aC=Object.values(preds).filter(v=>v==="away").length;
-    const hP=total?Math.round(hC/total*100):0,dP=total?Math.round(dC/total*100):0,aP=total?Math.round(aC/total*100):0;
-    const badge=m.result?'<span class="badge b-done">'+rText(m)+'</span>':isCutoff(m)?'<span class="badge b-live">Closed</span>':'<span class="badge b-open">Open</span>';
-    return '<div class="votes-card"><div class="votes-hdr"><div><div class="votes-title">'+flag(m.home)+' '+m.home+' vs '+flag(m.away)+' '+m.away+'</div><div class="votes-meta">'+fmtFull(m.date)+' &middot; '+m.group+(total>0?' &middot; '+total+' prediction'+(total!==1?'s':''):'')+'</div></div>'+badge+'</div>'
-      +(total===0
-        ?'<div style="padding:1rem 1.25rem;font-size:13px;color:var(--text-4);font-style:italic">No predictions yet.</div>'
-        :'<div class="votes-body">'
-          +'<div class="bar-row"><div class="bar-lbl"><span>'+flag(m.home)+' '+m.home+' wins</span><em>'+hC+' ('+hP+'%)</em></div><div class="bar-track"><div class="bar-fill fill-h" style="width:'+hP+'%"></div></div></div>'
-          +'<div class="bar-row"><div class="bar-lbl"><span>&#129309; Draw</span><em>'+dC+' ('+dP+'%)</em></div><div class="bar-track"><div class="bar-fill fill-d" style="width:'+dP+'%"></div></div></div>'
-          +'<div class="bar-row"><div class="bar-lbl"><span>'+flag(m.away)+' '+m.away+' wins</span><em>'+aC+' ('+aP+'%)</em></div><div class="bar-track"><div class="bar-fill fill-a" style="width:'+aP+'%"></div></div></div>'
-          +'</div>'
-      )+'</div>';
-  }).join("");
-}
-
-const TEAMS=["Algeria", "Argentina", "Australia", "Austria", "Belgium", "Bosnia", "Brazil", "Cameroon", "Canada", "Cape Verde", "Colombia", "Costa Rica", "Croatia", "Curacao", "Czechia", "DR Congo", "Denmark", "Ecuador", "Egypt", "England", "France", "Germany", "Ghana", "Haiti", "Honduras", "Iran", "Iraq", "Ivory Coast", "Japan", "Jordan", "Mexico", "Morocco", "Netherlands", "New Zealand", "Norway", "Panama", "Paraguay", "Poland", "Portugal", "Qatar", "Saudi Arabia", "Scotland", "Senegal", "Serbia", "South Africa", "South Korea", "Spain", "Sweden", "Switzerland", "Tunisia", "Turkiye", "USA", "Uruguay", "Uzbekistan", "Wales"];
+const TEAMS=["Algeria", "Argentina", "Australia", "Austria", "Belgium", "Bosnia", "Brazil", "Cameroon", "Canada", "Cape Verde", "Colombia", "Costa Rica", "Croatia", "Curacao", "Czechia", "DR Congo", "Denmark", "Ecuador", "Egypt", "England", "France", "Germany", "Ghana", "Haiti", "Honduras", "Iran", "Iraq", "Ivory Coast", "Japan", "Jordan", "Korea Republic", "Mexico", "Morocco", "Netherlands", "New Zealand", "Norway", "Panama", "Paraguay", "Poland", "Portugal", "Qatar", "Saudi Arabia", "Scotland", "Senegal", "Serbia", "South Africa", "South Korea", "Spain", "Sweden", "Switzerland", "Tunisia", "Turkiye", "USA", "Uruguay", "Uzbekistan", "Wales"];
 
 function tbdAC(input, inputId, listId){
   const val = input.value.trim();
@@ -888,11 +924,87 @@ function tbdSelect(inputId, listId, team){
   if(list){list.style.display="none";list.innerHTML="";}
 }
 
+
+async function refreshLB(){
+  showLoader("Refreshing leaderboard...");
+  await refreshState();
+  hideLoader();
+  rLB();
+  toast("Leaderboard updated!");
+}
+
+function rHistory(){
+  const el=document.getElementById("tab-history");
+  const rows=state.matches.map(m=>({m,pred:getPred(m.id)})).filter(r=>r.pred);
+  const correct=rows.filter(r=>r.m.result&&r.pred.result===getMatchResult(r.m).outcome).length;
+  const perfect=rows.filter(r=>{
+    if(!r.m.result) return false;
+    const mr=getMatchResult(r.m);
+    return calcPoints(r.pred,mr)===3;
+  }).length;
+  const settled=rows.filter(r=>r.m.result).length;
+  let h='<div class="page-hdr"><h2>My History</h2><p>Your predictions, '+currentUser+'</p></div>'
+    +'<div class="stat-grid"><div class="stat-box"><div class="num">'+rows.length+'</div><div class="lbl">Predicted</div></div>'
+    +'<div class="stat-box"><div class="num">'+perfect+'</div><div class="lbl">&#127919; Perfect</div></div>'
+    +'<div class="stat-box"><div class="num">'+correct+'</div><div class="lbl">&#10003; Right Result</div></div></div>';
+  if(!rows.length){h+='<div class="empty"><i class="ti ti-history"></i><p>No predictions yet.</p></div>';el.innerHTML=h;return;}
+  rows.forEach(r=>{
+    const m=r.m,p=r.pred,done=!!m.result;
+    const pRes=p?p.result:null;
+    const mr=done?getMatchResult(m):null;
+    const pts=done?calcPoints(p,mr):null;
+    const ok=pts===3||pts===1;
+    const perfect=pts===3;
+    h+='<div class="card"><div style="display:flex;align-items:center;gap:8px">'
+      +'<div style="flex:1;font-size:14px;font-weight:700">'+flag(m.home)+' '+m.home+'</div>'
+      +'<div style="font-size:12px;color:var(--text-3)">'+(done?rText(m):"vs")+'</div>'
+      +'<div style="flex:1;text-align:right;font-size:14px;font-weight:700">'+m.away+' '+flag(m.away)+'</div></div>'
+      +'<div class="match-meta"><span>'+fmtFull(m.date)+'</span><span>'+m.group+'</span>'
+      +'<span class="badge" style="background:var(--offwhite);color:var(--text-2);border:1px solid var(--border-2)">'
+      +strip(pLabel(pRes,m))+(p&&p.homeGoals!==null?' ('+p.homeGoals+'-'+p.awayGoals+')':'')+'</span>'
+      +(done?'<span class="badge '+(perfect?"b-win":ok?"b-win":"b-loss")+'">'+(perfect?"&#127919; Perfect":ok?"&#10003; Right result":"&#10007; Wrong")+'</span>'
+        :'<span class="badge" style="background:var(--bg);color:var(--text-3)">Awaiting result</span>')
+      +(done&&pts!==null?'<span class="badge" style="background:var(--navy);color:#fff">+'+pts+' pts</span>':'')
+      +'</div></div>';
+  });
+  el.innerHTML=h;
+}
+
+function rVotes(){
+  const el=document.getElementById("tab-votes");
+  const voted=new Set();Object.values(state.predictions).forEach(mp=>Object.keys(mp).forEach(n=>voted.add(n)));
+  let h='<div class="page-hdr"><h2>Votes Overview</h2><p>Prediction split for every match &mdash; '+voted.size+' employees have participated so far</p></div>'
+    +'<div id="votes-list">'+buildVL()+"</div>";
+  el.innerHTML=h;
+}
+function buildVL(){
+  const done=state.matches.filter(m=>!!m.result&&!isTBD(m));
+  const active=state.matches.filter(m=>!m.result&&isCutoff(m)&&!isTBD(m));
+  const open=state.matches.filter(m=>!m.result&&!isCutoff(m)&&isWithin3Days(m)&&!isTBD(m));
+  const ms=[...done,...active,...open];
+  if(!ms.length)return '<div class="empty"><i class="ti ti-ghost"></i><p>No matches with predictions yet.</p></div>';
+  return ms.map(m=>{
+    const preds=state.predictions[m.id]||{},total=Object.keys(preds).length;
+    const hC=Object.values(preds).filter(v=>(typeof v==="string"?v:v.result)==="home").length;
+    const dC=Object.values(preds).filter(v=>(typeof v==="string"?v:v.result)==="draw").length;
+    const aC=Object.values(preds).filter(v=>(typeof v==="string"?v:v.result)==="away").length;
+    const hP=total?Math.round(hC/total*100):0,dP=total?Math.round(dC/total*100):0,aP=total?Math.round(aC/total*100):0;
+    const badge=m.result?'<span class="badge b-done">'+rText(m)+'</span>':isCutoff(m)?'<span class="badge b-live">Closed</span>':'<span class="badge b-open">Open</span>';
+    return '<div class="votes-card"><div class="votes-hdr"><div><div class="votes-title">'+flag(m.home)+' '+m.home+' vs '+flag(m.away)+' '+m.away+'</div><div class="votes-meta">'+fmtFull(m.date)+' &middot; '+m.group+(total>0?' &middot; '+total+' prediction'+(total!==1?'s':''):'')+'</div></div>'+badge+'</div>'
+      +(total===0?'<div style="padding:1rem 1.25rem;font-size:13px;color:var(--text-4);font-style:italic">No predictions yet.</div>'
+        :'<div class="votes-body">'
+          +'<div class="bar-row"><div class="bar-lbl"><span>'+flag(m.home)+' '+m.home+' wins</span><em>'+hC+' ('+hP+'%)</em></div><div class="bar-track"><div class="bar-fill fill-h" style="width:'+hP+'%"></div></div></div>'
+          +'<div class="bar-row"><div class="bar-lbl"><span>&#129309; Draw</span><em>'+dC+' ('+dP+'%)</em></div><div class="bar-track"><div class="bar-fill fill-d" style="width:'+dP+'%"></div></div></div>'
+          +'<div class="bar-row"><div class="bar-lbl"><span>'+flag(m.away)+' '+m.away+' wins</span><em>'+aC+' ('+aP+'%)</em></div><div class="bar-track"><div class="bar-fill fill-a" style="width:'+aP+'%"></div></div></div>'
+          +'</div>'
+      )+'</div>';
+  }).join("");
+}
+
 function rAdmin(){
   const el=document.getElementById("tab-admin");
   let h='<div class="page-hdr"><h2>Admin Panel</h2><p>Update team names and enter match results</p></div>';
   h+='<div class="admin-section"><h3>Apps Script URL</h3>'
-    +'<p style="font-size:13px;color:var(--text-3);margin-bottom:10px">The URL connecting this app to Google Sheets.</p>'
     +'<div style="display:flex;gap:8px;align-items:center"><input id="gs-url-input" style="flex:1;padding:9px 12px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:13px" placeholder="https://script.google.com/macros/s/..." value="'+SCRIPT_URL+'" />'
     +'<button type="button" class="btn btn-navy" onclick="saveURL()"><i class="ti ti-check"></i> Save</button></div></div>';
   const tbdM=state.matches.filter(m=>isTBD(m));
@@ -901,36 +1013,52 @@ function rAdmin(){
     tbdM.slice(0,10).forEach(m=>{
       h+='<div class="card" style="margin-bottom:10px"><div style="font-size:13px;font-weight:600;color:var(--navy);margin-bottom:8px">'+m.group+' &mdash; '+fmtFull(m.date)+'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'
-        +'<div class="fg"><label>Home Team</label><div style="position:relative">'
-        +'<input id="tbd-h-'+m.id+'" placeholder="Type team name..." value="'+(m.home==="TBD"?"":m.home)+'" autocomplete="off" oninput="tbdAC(this,\'tbd-h-'+m.id+'\',\'tbd-ac-h-'+m.id+'\')" style="width:100%;padding:9px 12px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:14px" />'
-        +'<div id="tbd-ac-h-'+m.id+'" class="ac-list" style="display:none"></div>'
-        +'</div></div>'
-        +'<div class="fg"><label>Away Team</label><div style="position:relative">'
-        +'<input id="tbd-a-'+m.id+'" placeholder="Type team name..." value="'+(m.away==="TBD"?"":m.away)+'" autocomplete="off" oninput="tbdAC(this,\'tbd-a-'+m.id+'\',\'tbd-ac-a-'+m.id+'\')" style="width:100%;padding:9px 12px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:14px" />'
-        +'<div id="tbd-ac-a-'+m.id+'" class="ac-list" style="display:none"></div>'
-        +'</div></div>'
+        +'<div class="fg"><label>Home Team</label><div style="position:relative"><input id="tbd-h-'+m.id+'" placeholder="Type team name..." value="'+(m.home==="TBD"?"":m.home)+'" autocomplete="off" data-input="tbd-h-'+m.id+'" data-list="tbd-ac-h-'+m.id+'" oninput="tbdAC(this,this.dataset.input,this.dataset.list)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:14px" /><div id="tbd-ac-h-'+m.id+'" class="ac-list" style="display:none"></div></div></div>'
+        +'<div class="fg"><label>Away Team</label><div style="position:relative"><input id="tbd-a-'+m.id+'" placeholder="Type team name..." value="'+(m.away==="TBD"?"":m.away)+'" autocomplete="off" data-input="tbd-a-'+m.id+'" data-list="tbd-ac-a-'+m.id+'" oninput="tbdAC(this,this.dataset.input,this.dataset.list)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:14px" /><div id="tbd-ac-a-'+m.id+'" class="ac-list" style="display:none"></div></div></div>'
         +'</div><div style="margin-top:8px"><button type="button" class="btn btn-navy" onclick="updateTBD(this.dataset.id)" data-id="'+m.id+'"><i class="ti ti-check"></i> Update</button></div></div>';
     });
     h+='</div>';
   }
   h+='<div class="admin-section"><h3>Enter Match Results</h3>'
-    +'<p style="font-size:13px;color:var(--text-3);margin-bottom:10px">Enter results after each match ends. Leaderboard updates instantly for everyone.</p>';
+    +'<p style="font-size:13px;color:var(--text-3);margin-bottom:10px">Enter the final score — the app calculates who gets 3pts (perfect score) or 1pt (right result) automatically.</p>';
   const played=state.matches.filter(m=>isCutoff(m)&&!isTBD(m));
   if(!played.length){h+='<p style="font-size:13px;color:var(--text-4);font-style:italic">No matches have reached kickoff yet.</p>';}
   played.forEach(m=>{
-    h+='<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap"><div style="font-size:14px;font-weight:700">'+flag(m.home)+' '+m.home+' vs '+m.away+' '+flag(m.away)+'</div>'+(m.result?'<span class="badge b-done">'+rText(m)+'</span>':'<span class="badge b-live">Awaiting result</span>')+'</div><div class="match-meta"><span>'+fmtFull(m.date)+'</span><span>'+m.group+'</span></div>'
-      +(!m.result?'<div class="result-row"><span style="font-size:12px;color:var(--text-3);align-self:center">Result:</span><button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="home">'+m.home+' wins</button><button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="draw">Draw</button><button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="away">'+m.away+' wins</button></div>'
-        :'<div style="margin-top:8px"><button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px" onclick="clearResult(this.dataset.id)" data-id="'+m.id+'"><i class="ti ti-refresh"></i> Clear result</button></div>')+'</div>';
+    const mr=m.result?getMatchResult(m):null;
+    const scoreStr=mr&&mr.homeGoals!==null?mr.homeGoals+' - '+mr.awayGoals:'';
+    h+='<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      +'<div style="font-size:14px;font-weight:700">'+flag(m.home)+' '+m.home+' vs '+m.away+' '+flag(m.away)+'</div>'
+      +(m.result?'<span class="badge b-done">'+rText(m)+'</span>':'<span class="badge b-live">Awaiting result</span>')
+      +'</div><div class="match-meta"><span>'+fmtFull(m.date)+'</span><span>'+m.group+'</span></div>'
+      +(!m.result
+        ?'<div style="margin-top:10px">'
+          +'<div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:8px">Final Score</div>'
+          +'<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">'
+          +'<div style="text-align:center"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px">'+m.home+'</div>'
+          +'<input type="number" id="rg-h-'+m.id+'" min="0" max="20" placeholder="0" style="width:55px;padding:8px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
+          +'<div style="font-size:18px;font-weight:700;color:var(--text-3)">-</div>'
+          +'<div style="text-align:center"><div style="font-size:11px;color:var(--text-3);margin-bottom:4px">'+m.away+'</div>'
+          +'<input type="number" id="rg-a-'+m.id+'" min="0" max="20" placeholder="0" style="width:55px;padding:8px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
+          +'</div>'
+          +'<div class="result-row"><span style="font-size:12px;color:var(--text-3);align-self:center">Result:</span>'
+          +'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="home">'+m.home+' wins</button>'
+          +'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="draw">Draw</button>'
+          +'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="away">'+m.away+' wins</button>'
+          +'</div></div>'
+        :'<div style="margin-top:8px"><button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px" onclick="clearResult(this.dataset.id)" data-id="'+m.id+'"><i class="ti ti-refresh"></i> Clear result</button></div>'
+      )+'</div>';
   });
   h+='</div>';
   el.innerHTML=h;
 }
+
 function saveURL(){
   const url=document.getElementById("gs-url-input").value.trim();
   if(!url){toast("Please enter a URL.","error");return;}
   SCRIPT_URL=url;localStorage.setItem(SK+"-url",url);
   toast("URL saved!");loadState().then(()=>rAdmin());
 }
+
 async function updateTBD(mid){
   const hn=document.getElementById("tbd-h-"+mid).value.trim();
   const an=document.getElementById("tbd-a-"+mid).value.trim();
@@ -942,14 +1070,28 @@ async function updateTBD(mid){
   const m=state.matches.find(x=>x.id===mid);if(m){m.home=hn;m.away=an;}
   toast("Teams updated!");rAdmin();
 }
+
 async function setResult(mid,r){
+  const hg=document.getElementById("rg-h-"+mid);
+  const ag=document.getElementById("rg-a-"+mid);
+  const homeGoals=hg?hg.value.trim():"";
+  const awayGoals=ag?ag.value.trim():"";
+  if(homeGoals===""||awayGoals===""){toast("Please enter the final score before saving.","error");return;}
+  const hNum=parseInt(homeGoals);
+  const aNum=parseInt(awayGoals);
+  if(isNaN(hNum)||isNaN(aNum)||hNum<0||aNum<0){toast("Please enter valid goal numbers.","error");return;}
+  if(r==="home"&&hNum<=aNum){toast("Home goals must be more than away goals for a home win.","error");return;}
+  if(r==="away"&&aNum<=hNum){toast("Away goals must be more than home goals for an away win.","error");return;}
+  if(r==="draw"&&hNum!==aNum){toast("Goals must be equal for a draw.","error");return;}
   showLoader("Saving result...");
-  const res=await apiPost({action:"setResult",adminToken:"Kakkanad2026fifa",matchId:mid,result:r});
+  const res=await apiPost({action:"setResult",adminToken:"Kakkanad2026fifa",matchId:mid,result:r,homeGoals:hNum,awayGoals:aNum});
   hideLoader();
   if(res.error){toast(res.error,"error");return;}
-  const m=state.matches.find(x=>x.id===mid);if(m)m.result=r;
+  const m=state.matches.find(x=>x.id===mid);
+  if(m)m.result=r+":"+hNum+":"+aNum;
   toast("Result saved! Leaderboard updated.");rAdmin();
 }
+
 async function clearResult(mid){
   showLoader("Clearing...");
   const res=await apiPost({action:"clearResult",adminToken:"Kakkanad2026fifa",matchId:mid});
@@ -959,8 +1101,19 @@ async function clearResult(mid){
   toast("Result cleared.");rAdmin();
 }
 
+document.addEventListener("click",function(e){
+  const list=document.getElementById("ac-list");
+  if(list&&!list.contains(e.target)&&e.target.id!=="emp-name")list.style.display="none";
+  const menu=document.getElementById("logout-menu");
+  const pill=document.getElementById("user-pill");
+  if(menu&&pill&&!pill.contains(e.target))menu.style.display="none";
+  document.querySelectorAll('[id^="tbd-ac-"]').forEach(l=>{
+    if(!l.contains(e.target))l.style.display="none";
+  });
+});
 
 loadState();
+
 
 </script>
 </body>
