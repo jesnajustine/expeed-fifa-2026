@@ -601,50 +601,71 @@ function daysUntil(m){
 function selectPred(mid,choice){
   const m=state.matches.find(x=>x.id===mid);if(!m)return;
   pendingPreds[mid]={result:choice};
-  ["home","draw","away"].forEach(c=>{
-    const btn=document.getElementById("pb-"+mid+"-"+c);
-    if(btn)btn.className="pred-btn"+(c===choice?" sel-"+(c==="home"?"home":c==="draw"?"draw":"away"):"");
+  // Update both possible ID schemes (Today card uses pb-, All Matches uses mc-pb-)
+  ["pb-","mc-pb-"].forEach(prefix=>{
+    ["home","draw","away"].forEach(c=>{
+      const btn=document.getElementById(prefix+mid+"-"+c);
+      if(btn)btn.className="pred-btn"+(c===choice?" sel-"+(c==="home"?"home":c==="draw"?"draw":"away"):"");
+    });
   });
-  const conf=document.getElementById("confirm-"+mid);
-  const lbl=document.getElementById("sel-label-"+mid);
-  if(conf)conf.style.display="block";
-  if(lbl)lbl.textContent=pLabelText(choice,m);
-  // Update goal input labels
-  const hGoalLbl=document.getElementById("glbl-h-"+mid);
-  const aGoalLbl=document.getElementById("glbl-a-"+mid);
-  const hInput=document.getElementById("goals-h-"+mid);
-  const aInput=document.getElementById("goals-a-"+mid);
-  if(choice==="draw"){
-    // For draw: show one label "Goals each", sync both inputs
-    if(hGoalLbl)hGoalLbl.textContent="Goals each";
-    if(aGoalLbl)aGoalLbl.style.display="none";
-    if(aInput){aInput.style.display="none";}
-    if(hInput){hInput.oninput=function(){if(aInput)aInput.value=this.value;};}
-  } else {
-    if(hGoalLbl)hGoalLbl.textContent=m.home+" goals";
-    if(aGoalLbl){aGoalLbl.textContent=m.away+" goals";aGoalLbl.style.display="";}
-    if(aInput)aInput.style.display="";
-    if(hInput)hInput.oninput=null;
-  }
+  ["confirm-","mc-confirm-"].forEach(prefix=>{
+    const conf=document.getElementById(prefix+mid);
+    if(conf)conf.style.display="block";
+  });
+  ["sel-label-","mc-sel-label-"].forEach(prefix=>{
+    const lbl=document.getElementById(prefix+mid);
+    if(lbl)lbl.textContent=pLabelText(choice,m);
+  });
+  // Update goal input labels for both schemes
+  ["","mc-"].forEach(prefix=>{
+    const hGoalLbl=document.getElementById(prefix+"glbl-h-"+mid);
+    const aGoalLbl=document.getElementById(prefix+"glbl-a-"+mid);
+    const hInput=document.getElementById(prefix+"goals-h-"+mid);
+    const aInput=document.getElementById(prefix+"goals-a-"+mid);
+    if(choice==="draw"){
+      if(hGoalLbl)hGoalLbl.textContent="Goals each";
+      if(aGoalLbl)aGoalLbl.style.display="none";
+      if(aInput){aInput.style.display="none";}
+      if(hInput){hInput.oninput=function(){if(aInput)aInput.value=this.value;};}
+    } else {
+      if(hGoalLbl)hGoalLbl.textContent=m.home+" goals";
+      if(aGoalLbl){aGoalLbl.textContent=m.away+" goals";aGoalLbl.style.display="";}
+      if(aInput)aInput.style.display="";
+      if(hInput)hInput.oninput=null;
+    }
+  });
 }
 function cancelPred(mid){
   delete pendingPreds[mid];
-  ["home","draw","away"].forEach(c=>{
-    const btn=document.getElementById("pb-"+mid+"-"+c);
-    if(btn)btn.className="pred-btn";
+  ["pb-","mc-pb-"].forEach(prefix=>{
+    ["home","draw","away"].forEach(c=>{
+      const btn=document.getElementById(prefix+mid+"-"+c);
+      if(btn)btn.className="pred-btn";
+    });
   });
-  const conf=document.getElementById("confirm-"+mid);
-  if(conf)conf.style.display="none";
-  const hg=document.getElementById("goals-h-"+mid);
-  const ag=document.getElementById("goals-a-"+mid);
-  if(hg)hg.value="";
-  if(ag)ag.value="";
+  ["confirm-","mc-confirm-"].forEach(prefix=>{
+    const conf=document.getElementById(prefix+mid);
+    if(conf)conf.style.display="none";
+  });
+  ["","mc-"].forEach(prefix=>{
+    const hg=document.getElementById(prefix+"goals-h-"+mid);
+    const ag=document.getElementById(prefix+"goals-a-"+mid);
+    if(hg)hg.value="";
+    if(ag){ag.value="";ag.style.display="";}
+    const aGoalLbl=document.getElementById(prefix+"glbl-a-"+mid);
+    if(aGoalLbl)aGoalLbl.style.display="";
+  });
 }
 async function confirmPred(mid){
   const pred=pendingPreds[mid];
   if(!pred||!pred.result){toast("Please select a prediction first.","error");return;}
-  const hg=document.getElementById("goals-h-"+mid);
-  const ag=document.getElementById("goals-a-"+mid);
+  // Check both ID schemes - use whichever has a value entered
+  const hg1=document.getElementById("goals-h-"+mid);
+  const hg2=document.getElementById("mc-goals-h-"+mid);
+  const ag1=document.getElementById("goals-a-"+mid);
+  const ag2=document.getElementById("mc-goals-a-"+mid);
+  const hg=(hg1&&hg1.value.trim())?hg1:(hg2&&hg2.value.trim())?hg2:hg1||hg2;
+  const ag=(ag1&&ag1.value.trim())?ag1:(ag2&&ag2.value.trim())?ag2:ag1||ag2;
   const homeGoals=hg?hg.value.trim():"";
   const awayGoals=ag?ag.value.trim():"";
   if(homeGoals===""||awayGoals===""){toast("Please enter the predicted score.","error");return;}
@@ -779,20 +800,20 @@ function rAll(){
     let inline="";
     if(canPredict&&!mp){
       inline='<div class="pred-group" style="margin-top:10px">'
-        +'<button class="pred-btn" type="button" id="pb-'+m.id+'-home" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="home">'+flag(m.home)+' '+m.home+' wins</button>'
-        +'<button class="pred-btn" type="button" id="pb-'+m.id+'-draw" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">Draw</button>'
-        +'<button class="pred-btn" type="button" id="pb-'+m.id+'-away" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="away">'+flag(m.away)+' '+m.away+' wins</button>'
+        +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-home" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="home">'+flag(m.home)+' '+m.home+' wins</button>'
+        +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-draw" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">Draw</button>'
+        +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-away" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="away">'+flag(m.away)+' '+m.away+' wins</button>'
         +'</div>'
-        +'<div id="confirm-'+m.id+'" style="display:none;margin-top:8px">'
-        +'<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;text-align:center">Selected: <strong id="sel-label-'+m.id+'"></strong></div>'
+        +'<div id="mc-confirm-'+m.id+'" style="display:none;margin-top:8px">'
+        +'<div style="font-size:12px;color:var(--text-2);margin-bottom:8px;text-align:center">Selected: <strong id="mc-sel-label-'+m.id+'"></strong></div>'
         +'<div style="background:var(--bg);border-radius:var(--radius-sm);padding:10px;margin-bottom:8px">'
         +'<div style="font-size:11px;font-weight:700;color:var(--text-3);text-align:center;margin-bottom:6px;text-transform:uppercase">Predicted Score</div>'
         +'<div style="display:flex;align-items:center;justify-content:center;gap:10px">'
-        +'<div style="text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px" id="glbl-h-'+m.id+'">'+m.home+'</div>'
-        +'<input type="number" id="goals-h-'+m.id+'" min="0" max="20" placeholder="0" style="width:50px;padding:6px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
+        +'<div style="text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px" id="mc-glbl-h-'+m.id+'">'+m.home+'</div>'
+        +'<input type="number" id="mc-goals-h-'+m.id+'" min="0" max="20" placeholder="0" style="width:50px;padding:6px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
         +'<div style="font-size:16px;font-weight:700;color:var(--text-3)">-</div>'
-        +'<div style="text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px" id="glbl-a-'+m.id+'">'+m.away+'</div>'
-        +'<input type="number" id="goals-a-'+m.id+'" min="0" max="20" placeholder="0" style="width:50px;padding:6px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
+        +'<div style="text-align:center"><div style="font-size:10px;color:var(--text-3);margin-bottom:3px" id="mc-glbl-a-'+m.id+'">'+m.away+'</div>'
+        +'<input type="number" id="mc-goals-a-'+m.id+'" min="0" max="20" placeholder="0" style="width:50px;padding:6px;text-align:center;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);font-family:Barlow,sans-serif;font-size:18px;font-weight:700;color:var(--navy)"></div>'
         +'</div></div>'
         +'<div style="display:flex;gap:8px;justify-content:center">'
         +'<button type="button" onclick="cancelPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:6px 14px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);background:transparent;font-family:Barlow,sans-serif;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-2)">Cancel</button>'
