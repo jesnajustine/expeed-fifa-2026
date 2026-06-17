@@ -710,12 +710,18 @@ function matchCardNew(m){
     if(mp)body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> Locked: '+strip(pLabel(mp.result,m))+(mp.homeGoals!==null?' ('+mp.homeGoals+'-'+mp.awayGoals+')':'')+'</span></div>';
     else body='<p style="font-size:13px;color:var(--text-3);margin-top:6px">Predictions closed.</p>';
   } else if(done){
-    const mpResult=mp?mp.result:null;const ok=mpResult&&mpResult===m.result;const wr=mpResult&&mpResult!==m.result;
-    const correct=Object.values(state.predictions[m.id]||{}).filter(p=>p===m.result).length;
+    const mr=getMatchResult(m);
+    const pts=mp?calcPoints(mp,mr):null;
+    const ok=pts===3||pts===1;
+    const perfect=pts===3;
+    const correct=Object.values(state.predictions[m.id]||{}).filter(p=>{
+      const pRes=typeof p==="string"?p:p.result;
+      return pRes===mr.outcome;
+    }).length;
     body='<div style="margin-top:6px"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
       +'<span style="font-size:13px;color:var(--text-2)">Result: <strong>'+rText(m)+'</strong></span>'
-      +(mp?'<span class="badge '+(ok?"b-win":"b-loss")+'">'+(ok?"&#10003; Correct":"&#10007; Wrong")+'</span>':'<span class="badge" style="background:var(--bg);color:var(--text-3)">No prediction</span>')
-      +'</div><div style="font-size:12px;color:var(--text-4);margin-top:5px">'+correct+' of '+pc+' players got it right</div></div>';
+      +(mp?'<span class="badge '+(perfect?"b-win":ok?"b-win":"b-loss")+'">'+(perfect?"&#127919; Perfect ("+pts+" pts)":ok?"&#10003; Right result (1 pt)":"&#10007; Wrong")+'</span>':'<span class="badge" style="background:var(--bg);color:var(--text-3)">No prediction</span>')
+      +'</div><div style="font-size:12px;color:var(--text-4);margin-top:5px">'+correct+' of '+pc+' players got the result right</div></div>';
   }
   const isToday=isTodayIST(m.date);
   return '<div class="match-card" style="'+(isToday&&!tbd?"border-color:var(--red)":"")+'"><div class="match-card-top"><span class="match-group"><i class="ti ti-map-pin" style="font-size:13px"></i>'+m.group+'</span>'+badge+'</div><div class="match-body"><div class="teams-row"><div class="team-blk"><span class="team-flag">'+flag(m.home)+'</span><div class="team-name">'+m.home+'</div></div><div class="ko-blk"><div class="ko-time">'+fmtTime(m.date)+'</div><span class="ko-ist">IST</span></div><div class="team-blk"><span class="team-flag">'+flag(m.away)+'</span><div class="team-name">'+m.away+'</div></div></div>'+(!done&&!closed&&!tbd&&minsClose>0&&minsClose<=120?'<div class="cutoff-warn"><i class="ti ti-clock" style="font-size:15px"></i> Predictions lock '+minsClose+' min before kickoff</div>':"")+body+'</div></div>';
@@ -793,8 +799,13 @@ function rAll(){
         +'<button type="button" onclick="confirmPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:6px 18px;border:none;border-radius:var(--radius-sm);background:var(--red);font-family:Barlow,sans-serif;font-size:12px;font-weight:700;cursor:pointer;color:#fff">&#10003; Confirm</button>'
         +'</div></div>';
     } else if(mp){
-      const ok=mp&&m.result&&mp===m.result,wr=mp&&m.result&&mp!==m.result;
-      inline='<div style="margin-top:8px"><span class="locked-chip" style="font-size:12px;padding:6px 12px"><i class="ti ti-lock" style="font-size:12px"></i> '+pLabelText(mp,m)+(isDone?" "+'<span class="badge '+(ok?"b-win":wr?"b-loss":"")+'" style="margin-left:4px">'+(ok?"&#10003; Correct":wr?"&#10007; Wrong":"Pending")+"</span>":"")+"</span></div>";
+      const mpRes=mp.result;
+      const mr=isDone?getMatchResult(m):null;
+      const pts=isDone?calcPoints(mp,mr):null;
+      const ok=pts===3||pts===1;
+      const perfect=pts===3;
+      const scoreStr=(mp.homeGoals!==null&&mp.homeGoals!==undefined)?' ('+mp.homeGoals+'-'+mp.awayGoals+')':'';
+      inline='<div style="margin-top:8px"><span class="locked-chip" style="font-size:12px;padding:6px 12px"><i class="ti ti-lock" style="font-size:12px"></i> '+pLabelText(mpRes,m)+scoreStr+(isDone?" "+'<span class="badge '+(perfect?"b-win":ok?"b-win":"b-loss")+'" style="margin-left:4px">'+(perfect?"&#127919; Perfect":ok?"&#10003; Right result":"&#10007; Wrong")+"</span>":"")+"</span></div>";
     } else if(isClosed&&!isDone){
       inline='<p style="font-size:12px;color:var(--text-4);margin-top:6px">No prediction submitted.</p>';
     }
