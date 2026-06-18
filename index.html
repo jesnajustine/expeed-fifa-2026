@@ -559,7 +559,6 @@ async function submitPred(mid,choice,homeGoals,awayGoals){
   if(isAdmin){toast("Admins cannot submit predictions.","error");return;}
   if(isTBD(m)){toast("Teams not yet confirmed for this match.","error");return;}
   if(isCutoff(m)){toast("Predictions are closed for this match.","error");return;}
-  if(hasPred(mid)){toast("You have already predicted this match.","error");return;}
   showLoader("Saving prediction...");
   const res = await apiPost({action:"predict", token:sessionToken, matchId:mid, choice, homeGoals:homeGoals||null, awayGoals:awayGoals||null});
   hideLoader();
@@ -578,6 +577,26 @@ async function submitPred(mid,choice,homeGoals,awayGoals){
 // ── ADDITIONS: select/confirm flow, 3-day window, updated renders ─────────────
 
 let pendingPreds={};
+let editingPreds={};
+
+function startEdit(mid){
+  const mp=getPred(mid);
+  editingPreds[mid]=true;
+  if(mp) pendingPreds[mid]={result:mp.result};
+  rToday();
+  rAll();
+  // Pre-fill the UI after render
+  setTimeout(()=>{
+    if(!mp) return;
+    selectPred(mid, mp.result);
+    [["goals-h-","goals-a-"],["mc-goals-h-","mc-goals-a-"]].forEach(([hp,ap])=>{
+      const hEl=document.getElementById(hp+mid);
+      const aEl=document.getElementById(ap+mid);
+      if(hEl&&mp.homeGoals!==null&&mp.homeGoals!==undefined)hEl.value=mp.homeGoals;
+      if(aEl&&mp.awayGoals!==null&&mp.awayGoals!==undefined)aEl.value=mp.awayGoals;
+    });
+  },50);
+}
 
 function isWithin3Days(m){
   const now=Date.now();
@@ -637,6 +656,7 @@ function selectPred(mid,choice){
 }
 function cancelPred(mid){
   delete pendingPreds[mid];
+  delete editingPreds[mid];
   ["pb-","mc-pb-"].forEach(prefix=>{
     ["home","draw","away"].forEach(c=>{
       const btn=document.getElementById(prefix+mid+"-"+c);
@@ -678,6 +698,7 @@ async function confirmPred(mid){
   if(res==="away"&&aNum<=hNum){toast("Away goals must be more than home goals for an away win.","error");return;}
   await submitPred(mid,pred.result,hNum,aNum);
   delete pendingPreds[mid];
+  delete editingPreds[mid];
 }
 
 function matchCardNew(m){
@@ -695,8 +716,8 @@ function matchCardNew(m){
   if(tbd){
     body='<div class="tbd-warn"><i class="ti ti-clock" style="font-size:15px"></i> Teams will be confirmed before this match.</div>';
   } else if(!done&&!closed&&within3&&!isAdmin){
-    if(mp){
-      body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> '+strip(pLabel(mp.result,m))+(mp.homeGoals!==null?' &nbsp;('+mp.homeGoals+'-'+mp.awayGoals+')':'')+'</span></div>';
+    if(mp&&!editingPreds[m.id]){
+      body='<div class="pred-my-pick"><span class="locked-chip"><i class="ti ti-lock"></i> '+strip(pLabel(mp.result,m))+(mp.homeGoals!==null?' &nbsp;('+mp.homeGoals+'-'+mp.awayGoals+')':'')+'</span> <button type="button" onclick="startEdit(this.dataset.mid)" data-mid="'+m.id+'" style="background:none;border:none;color:var(--red);font-family:Barlow,sans-serif;font-size:12px;font-weight:700;cursor:pointer;text-decoration:underline;margin-left:8px">Edit</button></div>';
     } else {
       body='<div class="pred-my-pick"><span style="font-size:13px;color:var(--text-3)">Select your prediction, then confirm &mdash; once only</span></div>'
         +'<div class="pred-group" id="pg-'+m.id+'">'
@@ -798,7 +819,7 @@ function rAll(){
     const canPredict=!isAdmin&&isWithin3Days(m)&&!isDone&&!isClosed&&!isTBD(m);
     let sb=isTBD(m)?'<span class="badge b-tbd">TBD</span>':isDone?'<span class="badge b-done">'+rText(m)+'</span>':isClosed?'<span class="badge b-live">Closed</span>':canPredict?'<span class="badge b-open">Open</span>':'<span class="badge" style="background:var(--bg);color:var(--text-3);border:1px solid var(--border-2)">Upcoming</span>';
     let inline="";
-    if(canPredict&&!mp){
+    if(canPredict&&(!mp||editingPreds[m.id])){
       inline='<div class="pred-group" style="margin-top:10px">'
         +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-home" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="home">'+flag(m.home)+' '+m.home+' wins</button>'
         +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-draw" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">Draw</button>'
@@ -819,14 +840,14 @@ function rAll(){
         +'<button type="button" onclick="cancelPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:6px 14px;border:1.5px solid var(--border-2);border-radius:var(--radius-sm);background:transparent;font-family:Barlow,sans-serif;font-size:12px;font-weight:600;cursor:pointer;color:var(--text-2)">Cancel</button>'
         +'<button type="button" onclick="confirmPred(this.dataset.mid)" data-mid="'+m.id+'" style="padding:6px 18px;border:none;border-radius:var(--radius-sm);background:var(--red);font-family:Barlow,sans-serif;font-size:12px;font-weight:700;cursor:pointer;color:#fff">&#10003; Confirm</button>'
         +'</div></div>';
-    } else if(mp){
+    } else if(mp&&!editingPreds[m.id]){
       const mpRes=mp.result;
       const mr=isDone?getMatchResult(m):null;
       const pts=isDone?calcPoints(mp,mr):null;
       const ok=pts===3||pts===1;
       const perfect=pts===3;
       const scoreStr=(mp.homeGoals!==null&&mp.homeGoals!==undefined)?' ('+mp.homeGoals+'-'+mp.awayGoals+')':'';
-      inline='<div style="margin-top:8px"><span class="locked-chip" style="font-size:12px;padding:6px 12px"><i class="ti ti-lock" style="font-size:12px"></i> '+pLabelText(mpRes,m)+scoreStr+(isDone?" "+'<span class="badge '+(perfect?"b-win":ok?"b-win":"b-loss")+'" style="margin-left:4px">'+(perfect?"&#127919; Perfect":ok?"&#10003; Right result":"&#10007; Wrong")+"</span>":"")+"</span></div>";
+      inline='<div style="margin-top:8px"><span class="locked-chip" style="font-size:12px;padding:6px 12px"><i class="ti ti-lock" style="font-size:12px"></i> '+pLabelText(mpRes,m)+scoreStr+(isDone?" "+'<span class="badge '+(perfect?"b-win":ok?"b-win":"b-loss")+'" style="margin-left:4px">'+(perfect?"&#127919; Perfect":ok?"&#10003; Right result":"&#10007; Wrong")+"</span>":"")+(canPredict?' <button type="button" onclick="startEdit(this.dataset.mid)" data-mid="'+m.id+'" style="background:none;border:none;color:var(--red);font-family:Barlow,sans-serif;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;margin-left:6px">Edit</button>':"")+"</span></div>";
     } else if(isClosed&&!isDone){
       inline='<p style="font-size:12px;color:var(--text-4);margin-top:6px">No prediction submitted.</p>';
     }
