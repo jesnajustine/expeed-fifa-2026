@@ -560,12 +560,14 @@ async function submitPred(mid,choice,homeGoals,awayGoals){
   if(isTBD(m)){toast("Teams not yet confirmed for this match.","error");return;}
   if(isCutoff(m)){toast("Predictions are closed for this match.","error");return;}
   showLoader("Saving prediction...");
-  const res = await apiPost({action:"predict", token:sessionToken, matchId:mid, choice, homeGoals:homeGoals||null, awayGoals:awayGoals||null});
+  const hgVal=(homeGoals===null||homeGoals===undefined)?null:homeGoals;
+  const agVal=(awayGoals===null||awayGoals===undefined)?null:awayGoals;
+  const res = await apiPost({action:"predict", token:sessionToken, matchId:mid, choice, homeGoals:hgVal, awayGoals:agVal});
   hideLoader();
   if(res.error){toast(res.error,"error");return;}
   // Update local state immediately
   if(!state.predictions[mid])state.predictions[mid]={};
-  state.predictions[mid][currentUser]={result:choice,homeGoals:homeGoals||null,awayGoals:awayGoals||null};
+  state.predictions[mid][currentUser]={result:choice,homeGoals:hgVal,awayGoals:agVal};
   lastSaved=mid;
   toast("Prediction saved: "+pLabelText(choice,m));
   rToday(); rAll();
@@ -679,19 +681,21 @@ function cancelPred(mid){
 async function confirmPred(mid){
   const pred=pendingPreds[mid];
   if(!pred||!pred.result){toast("Please select a prediction first.","error");return;}
-  // Check both ID schemes - use whichever has a value entered
+  // Use ONE consistent card's pair of inputs - never mix home from one card with away from another
   const hg1=document.getElementById("goals-h-"+mid);
-  const hg2=document.getElementById("mc-goals-h-"+mid);
   const ag1=document.getElementById("goals-a-"+mid);
+  const hg2=document.getElementById("mc-goals-h-"+mid);
   const ag2=document.getElementById("mc-goals-a-"+mid);
-  const hg=(hg1&&hg1.value.trim())?hg1:(hg2&&hg2.value.trim())?hg2:hg1||hg2;
-  const ag=(ag1&&ag1.value.trim())?ag1:(ag2&&ag2.value.trim())?ag2:ag1||ag2;
+  let hg, ag;
+  if(hg1&&hg1.value.trim()!==""){ hg=hg1; ag=ag1; }
+  else if(hg2&&hg2.value.trim()!==""){ hg=hg2; ag=ag2; }
+  else { hg=hg1||hg2; ag=ag1||ag2; }
   const homeGoals=hg?hg.value.trim():"";
-  const awayGoals=ag?ag.value.trim():"";
+  // For draw, away goals = home goals
+  const awayGoals=(pred.result==="draw")?homeGoals:(ag?ag.value.trim():"");
   if(homeGoals===""||awayGoals===""){toast("Please enter the predicted score.","error");return;}
   const hNum=parseInt(homeGoals);
-  // For draw, away goals = home goals
-  const aNum=pred.result==="draw"?hNum:parseInt(awayGoals);
+  const aNum=parseInt(awayGoals);
   if(isNaN(hNum)||isNaN(aNum)||hNum<0||aNum<0){toast("Please enter valid goal numbers.","error");return;}
   const res=pred.result;
   if(res==="home"&&hNum<=aNum){toast("Home goals must be more than away goals for a home win.","error");return;}
