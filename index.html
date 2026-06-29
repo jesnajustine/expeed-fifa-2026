@@ -318,6 +318,7 @@ function fmtTime(d){ return new Date(d).toLocaleTimeString("en-IN",{hour:"2-digi
 function fmtFull(d){ const t=new Date(d); return t.toLocaleDateString("en-IN",{day:"numeric",month:"short"})+", "+t.toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit",hour12:true})+" IST"; }
 function todayLbl(){ return nowIST().toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }
 function isTBD(m){ return m.home==="TBD"||m.away==="TBD"; }
+function isKnockout(m){ return /^k/i.test(m.id) || /round of|quarter|semi|final/i.test(m.group||""); }
 function pLabel(p,m){ if(p==="home")return flag(m.home)+" "+m.home+" wins"; if(p==="draw")return "\u{1F91D} Draw"; if(p==="away")return flag(m.away)+" "+m.away+" wins"; return p; }
 function pLabelText(p,m){ if(p==="home")return m.home+" wins"; if(p==="draw")return "Draw"; if(p==="away")return m.away+" wins"; return p; }
 function rText(m){
@@ -726,7 +727,7 @@ function matchCardNew(m){
       body='<div class="pred-my-pick"><span style="font-size:13px;color:var(--text-3)">Select your prediction, then confirm &mdash; once only</span></div>'
         +'<div class="pred-group" id="pg-'+m.id+'">'
         +'<button class="pred-btn" type="button" id="pb-'+m.id+'-home" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="home">'+flag(m.home)+'<br>'+m.home+'<span class="pred-sub">wins</span></button>'
-        +'<button class="pred-btn" type="button" id="pb-'+m.id+'-draw" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">&#129309;<br>Draw</button>'
+        +(isKnockout(m)?'':'<button class="pred-btn" type="button" id="pb-'+m.id+'-draw" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">&#129309;<br>Draw</button>')
         +'<button class="pred-btn" type="button" id="pb-'+m.id+'-away" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="away">'+flag(m.away)+'<br>'+m.away+'<span class="pred-sub">wins</span></button>'
         +'</div>'
         +'<div id="confirm-'+m.id+'" style="display:none;margin-top:12px">'
@@ -826,7 +827,7 @@ function rAll(){
     if(canPredict&&(!mp||editingPreds[m.id])){
       inline='<div class="pred-group" style="margin-top:10px">'
         +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-home" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="home">'+flag(m.home)+' '+m.home+' wins</button>'
-        +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-draw" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">Draw</button>'
+        +(isKnockout(m)?'':'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-draw" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="draw">Draw</button>')
         +'<button class="pred-btn" type="button" id="mc-pb-'+m.id+'-away" style="padding:8px 6px;font-size:12px" onclick="selectPred(this.dataset.mid,this.dataset.c)" data-mid="'+m.id+'" data-c="away">'+flag(m.away)+' '+m.away+' wins</button>'
         +'</div>'
         +'<div id="mc-confirm-'+m.id+'" style="display:none;margin-top:8px">'
@@ -1118,7 +1119,7 @@ function rAdmin(){
           +'</div>'
           +'<div class="result-row"><span style="font-size:12px;color:var(--text-3);align-self:center">Result:</span>'
           +'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="home">'+m.home+' wins</button>'
-          +'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="draw">Draw</button>'
+          +(isKnockout(m)?'':'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="draw">Draw</button>')
           +'<button type="button" class="result-btn" onclick="setResult(this.dataset.id,this.dataset.r)" data-id="'+m.id+'" data-r="away">'+m.away+' wins</button>'
           +'</div></div>'
         :'<div style="margin-top:8px"><button type="button" class="btn btn-outline" style="font-size:12px;padding:5px 10px" onclick="clearResult(this.dataset.id)" data-id="'+m.id+'"><i class="ti ti-refresh"></i> Clear result</button></div>'
